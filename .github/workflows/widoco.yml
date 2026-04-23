@@ -1,0 +1,76 @@
+name: Generate WIDOCO documentation
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download WIDOCO
+        run: |
+          curl -sL -o widoco.jar \
+            https://github.com/dgarijo/Widoco/releases/download/v1.4.25/widoco-1.4.25-jar-with-dependencies_JDK-17.jar
+
+      - name: Generate documentation
+        run: |
+          mkdir -p site
+          java -jar widoco.jar \
+            -ontFile EDAM-bioimaging-1.0alpha-pre-pre-release.owl \
+            -outFolder site \
+            -rewriteAll \
+            -webVowl \
+            -lang en \
+            -getOntologyMetadata \
+            -uniteSections \
+            -includeAnnotationProperties \
+            -noPlaceHolderText
+
+      - name: Stage site root
+        run: |
+          # WIDOCO writes to site/doc/ — promote it to the Pages root
+          if [ -d site/doc ]; then
+            mv site/doc/* site/
+            rmdir site/doc
+          fi
+          # Provide a friendly landing redirect if WIDOCO's index is language-suffixed
+          if [ -f site/index-en.html ] && [ ! -f site/index.html ]; then
+            cp site/index-en.html site/index.html
+          fi
+          ls -la site/ | head -30
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
